@@ -170,8 +170,45 @@ class PerPolicy(ReplacementPolicy):
         pass
 
     def choose_victim(self, frames, page_tables, time) -> int:
-        raise NotImplementedError
+        # Category Lists:
+        # category00: ref = 0, dirty = 0
+        # category01: ref = 0, dirty = 1
+        # category10: ref = 1, dirty = 0
+        # category11: ref = 1, dirty = 1
+        category00 = []
+        category01 = []
+        category10 = []
+        category11 = []
 
+        for frame_index, fr in enumerate(frames):
+            if not fr.used:
+                continue
+
+            # MUST be inside the loop
+            pte = page_tables[fr.pid][fr.vpn]
+            ref = pte.ref
+            dirty = pte.dirty
+
+            if ref == 0 and dirty == 0:
+                category00.append(frame_index)
+            elif ref == 0 and dirty == 1:
+                category01.append(frame_index)
+            elif ref == 1 and dirty == 0:
+                category10.append(frame_index)
+            else:
+                category11.append(frame_index)
+
+        # MUST be inside the function — indent these!
+        if category00:
+            return min(category00)
+        if category01:
+            return min(category01)
+        if category10:
+            return min(category10)
+        if category11:
+            return min(category11)
+
+        raise RuntimeError("PER called with no used frames")
 
 # ============================================================
 # Virtual memory simulator
