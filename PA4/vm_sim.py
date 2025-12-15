@@ -193,18 +193,67 @@ class LruPolicy(ReplacementPolicy):
 # ============================================================
 
 class PerPolicy(ReplacementPolicy):
-    """
-    PER: periodic reference bit reset with category-based replacement.
-    """
-
+ 
     name = "PER"
 
     def __init__(self):
         pass
 
     def choose_victim(self, frames, page_tables, time) -> int:
-        raise NotImplementedError
-
+        
+        # Build candidates organized by priority categories
+        category_unused = []
+        category_unref_clean = []
+        category_unref_dirty = []
+        category_ref_clean = []
+        category_ref_dirty = []
+        
+        for frame_id in range(len(frames)):
+            fr = frames[frame_id]
+            
+            # Skip unused frames for now (handle separately)
+            if not fr.used:
+                category_unused.append(frame_id)
+                continue
+            
+            # Get page table entry for this frame
+            pid = fr.pid
+            vpn = fr.vpn
+            pte = page_tables[pid][vpn]
+            
+            # Categorize based on ref bit and dirty bit
+            if pte.ref == 0 and pte.dirty == 0:
+                category_unref_clean.append(frame_id)
+            elif pte.ref == 0 and pte.dirty == 1:
+                category_unref_dirty.append(frame_id)
+            elif pte.ref == 1 and pte.dirty == 0:
+                category_ref_clean.append(frame_id)
+            elif pte.ref == 1 and pte.dirty == 1:
+                category_ref_dirty.append(frame_id)
+        
+        # Search categories in order of priority
+        # Category 1: Unused pages
+        if category_unused:
+            return min(category_unused)
+        
+        # Category 2: Unreferenced, clean pages
+        if category_unref_clean:
+            return min(category_unref_clean)
+        
+        # Category 3: Unreferenced, dirty pages
+        if category_unref_dirty:
+            return min(category_unref_dirty)
+        
+        # Category 4: Referenced, clean pages
+        if category_ref_clean:
+            return min(category_ref_clean)
+        
+        # Category 5: Referenced, dirty pages
+        if category_ref_dirty:
+            return min(category_ref_dirty)
+        
+        # Should never reach here if at least one frame is used
+        raise RuntimeError("PER: No suitable victim frame found")
 
 # ============================================================
 # Virtual memory simulator
@@ -359,10 +408,10 @@ def main(argv: List[str]) -> int:
 
     trace_path = argv[1]
 
-    policy = RandPolicy(seed=0)
-    #policy = FifoPolicy()
-    #policy = LruPolicy()
-    # policy = PerPolicy()
+    # policy = RandPolicy(seed=0)
+    # policy = FifoPolicy()
+    # policy = LruPolicy()
+    policy = PerPolicy()
 
     sim = VMSimulator(policy=policy)
     stats = sim.run_trace(trace_path)
