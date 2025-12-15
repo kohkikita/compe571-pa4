@@ -133,7 +133,20 @@ class FifoPolicy(ReplacementPolicy):
         pass
 
     def choose_victim(self, frames, page_tables, time) -> int:
-        raise NotImplementedError
+        # Consider only frames that are currently used/occupied
+        candidates = [i for i, fr in enumerate(frames) if fr.used]
+        if not candidates:
+            raise RuntimeError("FIFO called with no used frames")
+
+        # Pick the frame whose load_time is smallest (oldest in memory).
+        # Tie-breaker: smaller frame index (min() handles that automatically
+        # if we use (load_time, frame_id) as the key).
+        victim_frame_id = min(
+            candidates,
+            key=lambda i: (frames[i].load_time, i)
+        )
+        return victim_frame_id
+    
 
 
 # ============================================================
@@ -152,7 +165,27 @@ class LruPolicy(ReplacementPolicy):
         pass
 
     def choose_victim(self, frames, page_tables, time) -> int:
-        raise NotImplementedError
+        candidates = [i for i, fr in enumerate(frames) if fr.used]
+        if not candidates:
+            raise RuntimeError("LRU called with no used frames")
+
+        def last_used_for_frame(frame_id: int) -> tuple[int, int]:
+            fr = frames[frame_id]
+            pid = fr.pid
+            vpn = fr.vpn
+
+            # In a well-formed simulator, these should never be None
+            # for a used frame, but we'll be defensive.
+            if pid is None or vpn is None:
+                # Treat as very recently used so it's unlikely to be chosen
+                return (float("inf"), frame_id)
+
+            pte = page_tables[pid][vpn]
+            # Key is (last_used, frame_id): lower last_used first, then lower frame_id
+            return (pte.last_used, frame_id)
+
+        victim_frame_id = min(candidates, key=last_used_for_frame)
+        return victim_frame_id
 
 
 # ============================================================
@@ -327,8 +360,8 @@ def main(argv: List[str]) -> int:
     trace_path = argv[1]
 
     policy = RandPolicy(seed=0)
-    # policy = FifoPolicy()
-    # policy = LruPolicy()
+    #policy = FifoPolicy()
+    #policy = LruPolicy()
     # policy = PerPolicy()
 
     sim = VMSimulator(policy=policy)
